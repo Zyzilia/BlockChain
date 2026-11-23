@@ -26,7 +26,7 @@ npm run dev              # server di http://localhost:3000
 
 ## Tahap pengerjaan
 1. Fondasi dan arsitektur  (selesai)
-2. Smart contract + test + deploy Sepolia
+2. Smart contract + test + deploy Sepolia  (selesai)
 3. Backend: auth, event, order
 4. Midtrans sandbox + webhook
 5. Webhook -> mint token
