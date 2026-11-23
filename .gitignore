@@ -1,0 +1,11 @@
+node_modules/
+.env
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+artifacts/
+cache/
+typechain-types/
+dist/
+.DS_Store
