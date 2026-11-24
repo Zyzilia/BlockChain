@@ -37,7 +37,32 @@ NIM disimpan sebagai HMAC-SHA256, password sebagai hash bcrypt, private key wall
 **Buat order** body: `{ eventId, quantity }`. Biaya layanan Rp5.000 per tiket (nominal sampai Rp100.000) atau 5% di atas itu.
 Contoh: 2 tiket Rp75.000 -> `faceTotalIdr` 150000, `serviceFeeIdr` 10000, `totalIdr` 160000.
 Order pending menahan kuota selama 30 menit (`expiresAt`). Kode: 409 melebihi batas per akun atau tiket tidak cukup, 429 lebih dari 10 order per menit.
-Pembayaran Midtrans ditambahkan di Tahap 4.
+
+### Pembayaran (Tahap 4)
+| Method | Path | Akses | Fungsi |
+|---|---|---|---|
+| POST | /api/orders/:id/pay | auth | Buat transaksi Snap di Midtrans sandbox, mengembalikan `{ payment: { token, redirectUrl } }`. Dipanggil ulang akan mengembalikan token yang sama |
+| POST | /api/orders/:id/sync | auth | Cadangan bila webhook tidak sampai: tanya status ke Midtrans lalu perbarui order |
+| POST | /api/payments/notification | publik (signature) | Webhook Midtrans |
+| GET | /api/tickets | auth | Tiket milik sendiri (`pending_mint` sampai token dicetak di Tahap 5) |
+
+Kode `/pay`: 409 order bukan pending atau sudah kedaluwarsa, 502 Midtrans menolak, 503 key Midtrans belum diisi.
+
+**Webhook** (`/api/payments/notification`)
+- Signature diverifikasi: `SHA512(order_id + status_code + gross_amount + SignatureSecretKey)`. Sejak 28 Okt 2026 kuncinya adalah Signature Secret Key (`MIDTRANS_SIGNATURE_SECRET_KEY`), terpisah dari Server Key. Bila tidak diisi, Server Key dipakai (akun lama). `MIDTRANS_SIGNATURE_SECRET_KEY_OLD` boleh diisi sementara saat rotasi kunci. Salah -> 403 dan dicatat untuk audit.
+- Idempotency: kunci `(order_id, transaction_status)`, notifikasi yang sama diproses sekali (`result: "duplicate"`).
+- Nominal `gross_amount` harus sama dengan total order, jika tidak -> `amount_mismatch` dan order tidak berubah.
+- Status order hanya berubah dari `pending`, jadi notifikasi terlambat tidak merusak order yang sudah `paid`.
+
+| transaction_status dari Midtrans | Status order |
+|---|---|
+| settlement, atau capture dengan fraud_status accept (status_code 200) | `paid`, tiket dibuat |
+| pending | tetap `pending` (metode bayar dicatat) |
+| expire | `expired` |
+| deny, cancel, failure | `failed` |
+| refund, partial_refund, chargeback (dari `paid`) | `refunded` |
+
+Order `failed` dan `expired` tidak lagi menahan kuota 4 tiket per akun maupun kapasitas event.
 
 ## Lainnya
 | Method | Path | Fungsi |

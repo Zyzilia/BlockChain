@@ -5,6 +5,8 @@ const { PENDING_HOLD_MINUTES } = require('../config');
 const { auth, requireRole } = require('../middleware/auth');
 const { rateLimit } = require('../middleware/rateLimit');
 const { calcOrderAmounts } = require('../services/pricing');
+const { createSnapTransaction, getTransactionStatus } = require('../services/midtrans');
+const { applyNotification } = require('../services/payments');
 const { HttpError, toIso, isInt } = require('../utils/http');
 
 const router = express.Router();
@@ -91,6 +93,74 @@ router.get('/:id', auth, (req, res, next) => {
     const o = db.prepare(`${SELECT_ORDER} WHERE o.id = ? AND o.user_id = ?`).get(req.params.id, req.user.id);
     if (!o) throw new HttpError(404, 'Order tidak ditemukan');
     res.json({ order: view(o) });
+  } catch (err) { next(err); }
+});
+
+// Mulai pembayaran: membuat transaksi Snap di Midtrans dan mengembalikan token + tautan bayar
+router.post('/:id/pay', auth, async (req, res, next) => {
+  try {
+    const order = db.prepare(`${SELECT_ORDER} WHERE o.id = ? AND o.user_id = ?`).get(req.params.id, req.user.id);
+    if (!order) throw new HttpError(404, 'Order tidak ditemukan');
+    if (order.status !== 'pending') throw new HttpError(409, `Order sudah berstatus ${order.status}`);
+
+    const ageMin = (Date.now() - Date.parse(toIso(order.created_at))) / 60000;
+    if (ageMin >= PENDING_HOLD_MINUTES) {
+      db.prepare(`UPDATE orders SET status = 'expired' WHERE id = ? AND status = 'pending'`).run(order.id);
+      throw new HttpError(409, 'Order sudah kedaluwarsa, buat order baru');
+    }
+
+    const redirect = (t) => `https://app.sandbox.midtrans.com/snap/v2/vtweb/${t}`;
+    if (order.snap_token) {
+      return res.json({ payment: { token: order.snap_token, redirectUrl: redirect(order.snap_token) } });
+    }
+
+    const ev = db.prepare('SELECT * FROM events WHERE id = ?').get(order.event_id);
+    const user = db.prepare('SELECT name, email FROM users WHERE id = ?').get(req.user.id);
+    const feePerTicket = order.service_fee_idr / order.quantity;
+
+    let payment;
+    try {
+      payment = await createSnapTransaction({
+        orderId: order.midtrans_order_id,
+        grossAmount: order.total_idr,
+        items: [
+          { id: `EVT-${ev.id}`, price: ev.face_value_idr, quantity: order.quantity, name: `Tiket ${ev.name}`.slice(0, 50) },
+          { id: 'FEE', price: feePerTicket, quantity: order.quantity, name: 'Biaya layanan' },
+        ],
+        customer: { first_name: user.name.slice(0, 50), email: user.email },
+        expiryMinutes: Math.max(1, Math.ceil(PENDING_HOLD_MINUTES - ageMin)),
+      });
+    } catch (e) {
+      if (e.message === 'MIDTRANS_NOT_CONFIGURED') {
+        throw new HttpError(503, 'Midtrans belum dikonfigurasi (MIDTRANS_SERVER_KEY di .env)');
+      }
+      throw new HttpError(502, 'Gagal membuat pembayaran: ' + e.message.replace('MIDTRANS_ERROR: ', ''));
+    }
+
+    db.prepare('UPDATE orders SET snap_token = ? WHERE id = ?').run(payment.token, order.id);
+    res.json({ payment: { token: payment.token, redirectUrl: payment.redirectUrl } });
+  } catch (err) { next(err); }
+});
+
+// Cadangan bila webhook tidak sampai: tanyakan status langsung ke Midtrans
+router.post('/:id/sync', auth, async (req, res, next) => {
+  try {
+    const order = db.prepare(`${SELECT_ORDER} WHERE o.id = ? AND o.user_id = ?`).get(req.params.id, req.user.id);
+    if (!order) throw new HttpError(404, 'Order tidak ditemukan');
+
+    let status;
+    try {
+      status = await getTransactionStatus(order.midtrans_order_id);
+    } catch (e) {
+      if (e.message === 'MIDTRANS_NOT_CONFIGURED') throw new HttpError(503, 'Midtrans belum dikonfigurasi');
+      throw new HttpError(502, 'Gagal menghubungi Midtrans: ' + e.message);
+    }
+    if (!status || String(status.status_code) === '404' || !status.transaction_status) {
+      return res.json({ order: view(order), note: 'Belum ada transaksi pembayaran di Midtrans' });
+    }
+    const result = applyNotification(status);
+    const fresh = db.prepare(`${SELECT_ORDER} WHERE o.id = ?`).get(order.id);
+    res.json({ order: view(fresh), result: result.result });
   } catch (err) { next(err); }
 });
 

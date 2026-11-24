@@ -10,6 +10,17 @@ function validateConfig() {
   if (Buffer.byteLength(process.env.WALLET_ENC_KEY || '', 'utf8') !== 32) {
     problems.push('WALLET_ENC_KEY harus tepat 32 karakter');
   }
+  // Keamanan: tugas ini hanya boleh memakai Midtrans SANDBOX
+  const midtransKey = process.env.MIDTRANS_SERVER_KEY || '';
+  if (process.env.MIDTRANS_IS_PRODUCTION === 'true') {
+    problems.push('MIDTRANS_IS_PRODUCTION harus false (tugas ini hanya sandbox)');
+  }
+  if (midtransKey && !midtransKey.startsWith('SB-')) {
+    problems.push('MIDTRANS_SERVER_KEY harus key SANDBOX (diawali SB-Mid-server-). Jangan pakai key production');
+  }
+  if (midtransKey && !process.env.MIDTRANS_SIGNATURE_SECRET_KEY) {
+    console.warn('[PERINGATAN] MIDTRANS_SIGNATURE_SECRET_KEY belum diisi. Webhook memakai Server Key; bila Midtrans menolak/ditolak (signature tidak valid), isi Signature Secret Key dari Settings > Access Keys.');
+  }
   if (problems.length) {
     console.error('\nKonfigurasi .env belum benar:');
     problems.forEach((p) => console.error(' - ' + p));

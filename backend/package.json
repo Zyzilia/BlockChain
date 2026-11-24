@@ -8,7 +8,9 @@
     "start": "node src/index.js",
     "db:init": "node src/db-init.js",
     "gen:keys": "node scripts/gen-keys.js",
-    "smoke": "node scripts/smoke-test.js"
+    "smoke": "node scripts/smoke-test.js",
+    "test:payment": "node scripts/payment-test.js",
+    "demo:pay": "node scripts/pay-demo.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
