@@ -1,5 +1,6 @@
 const { ethers } = require('ethers');
 const abi = require('../abi/TiketAman.json');
+const { enqueue } = require('./chainQueue');
 
 let cached = null;
 
@@ -17,20 +18,74 @@ function getContract() {
   return cached;
 }
 
-// Mengunci konfigurasi event (harga, kuota, batas resale) di smart contract
-async function createEventOnChain({ faceValueIdr, capacity, maxPerUser, maxResaleBps, organizerAddress }) {
-  const contract = getContract();
-  const tx = await contract.createEvent(faceValueIdr, capacity, maxPerUser, maxResaleBps, organizerAddress);
-  const receipt = await tx.wait();
+const isConfigured = () => !!(process.env.RPC_URL && process.env.PLATFORM_PRIVATE_KEY && process.env.CONTRACT_ADDRESS);
+
+// Mencari log event tertentu pada receipt transaksi
+function findEvent(contract, receipt, name) {
   for (const log of receipt.logs) {
     try {
       const parsed = contract.interface.parseLog(log);
-      if (parsed && parsed.name === 'EventCreated') {
-        return { onchainEventId: Number(parsed.args.eventId), txHash: tx.hash };
-      }
+      if (parsed && parsed.name === name) return parsed;
     } catch (_) { /* log dari kontrak lain, abaikan */ }
   }
-  throw new Error('Event EventCreated tidak ditemukan pada transaksi');
+  return null;
 }
 
-module.exports = { createEventOnChain };
+// Mengunci konfigurasi event (harga, kuota, batas resale) di smart contract
+function createEventOnChain({ faceValueIdr, capacity, maxPerUser, maxResaleBps, organizerAddress }) {
+  return enqueue(async () => {
+    const contract = getContract();
+    const tx = await contract.createEvent(faceValueIdr, capacity, maxPerUser, maxResaleBps, organizerAddress);
+    const receipt = await tx.wait();
+    const ev = findEvent(contract, receipt, 'EventCreated');
+    if (!ev) throw new Error('Event EventCreated tidak ditemukan pada transaksi');
+    return { onchainEventId: Number(ev.args.eventId), txHash: tx.hash };
+  });
+}
+
+// Mencetak satu tiket (token ERC-721) ke alamat wallet pembeli.
+// onTxSent dipanggil begitu hash transaksi ada, sebelum menunggu konfirmasi (untuk pemulihan bila server mati).
+function mintTicketOnChain({ onchainEventId, to, onTxSent }) {
+  return enqueue(async () => {
+    const contract = getContract();
+    const tx = await contract.mintTicket(onchainEventId, to);
+    if (onTxSent) onTxSent(tx.hash);
+    const receipt = await tx.wait();
+    const ev = findEvent(contract, receipt, 'TicketMinted');
+    if (!ev) throw new Error('Event TicketMinted tidak ditemukan pada transaksi');
+    return { tokenId: Number(ev.args.tokenId), txHash: tx.hash };
+  });
+}
+
+// Memeriksa transaksi mint yang hash-nya sudah tersimpan tetapi hasilnya belum dicatat
+// (misalnya server mati saat menunggu konfirmasi). Mencegah mint ganda untuk satu tiket.
+async function inspectMintTx(txHash) {
+  const contract = getContract();
+  const provider = contract.runner.provider;
+  const receipt = await provider.getTransactionReceipt(txHash);
+  if (receipt) {
+    if (receipt.status !== 1) return { state: 'reverted' };
+    const ev = findEvent(contract, receipt, 'TicketMinted');
+    return ev ? { state: 'mined', tokenId: Number(ev.args.tokenId) } : { state: 'reverted' };
+  }
+  const tx = await provider.getTransaction(txHash);
+  return { state: tx ? 'pending' : 'missing' };
+}
+
+// Membaca keadaan tiket langsung dari blockchain (bukti keaslian dan kepemilikan)
+async function readTicketOnChain(tokenId) {
+  const contract = getContract();
+  try {
+    const [owner, used, eventId] = await Promise.all([
+      contract.ownerOf(tokenId),
+      contract.used(tokenId),
+      contract.ticketEvent(tokenId),
+    ]);
+    return { exists: true, owner, used, eventId: Number(eventId) };
+  } catch (e) {
+    if (e.code === 'CALL_EXCEPTION') return { exists: false }; // token tidak ada
+    throw e;
+  }
+}
+
+module.exports = { isConfigured, createEventOnChain, mintTicketOnChain, inspectMintTx, readTicketOnChain };

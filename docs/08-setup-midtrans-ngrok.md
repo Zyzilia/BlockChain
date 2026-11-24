@@ -42,7 +42,7 @@ Simpan (Update). Finish/Unfinish/Error Redirect URL boleh dikosongkan sampai Tah
 4. Status order berubah menjadi `paid` lewat webhook.
 **QRIS**: jangan dipindai dengan aplikasi bank atau e-wallet asli. Gunakan simulator saja, karena QRIS sandbox bisa terhubung ke merchant produksi.
 
-`npm run demo:pay` otomatis mengecek status ke Midtrans tiap 15 detik bila webhook tidak sampai. Tanpa tunnel sama sekali: `npm run demo:pay -- --sync` (tiap 5 detik).
+`npm run demo:pay` otomatis mengecek status ke Midtrans tiap 15 detik bila webhook tidak sampai. Tanpa tunnel sama sekali: `npm run demo:pay:sync` (tiap 5 detik).
 
 ## Masalah umum
 | Gejala | Penyebab |

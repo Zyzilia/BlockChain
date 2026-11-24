@@ -35,4 +35,7 @@ app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
 });
 
 const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`TiketAman backend jalan di http://localhost:${port}`));
+app.listen(port, () => {
+  console.log(`TiketAman backend jalan di http://localhost:${port}`);
+  require('./services/fulfillment').startWorker(); // cetak token untuk tiket yang sudah dibayar
+});

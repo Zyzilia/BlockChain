@@ -44,7 +44,8 @@ Order pending menahan kuota selama 30 menit (`expiresAt`). Kode: 409 melebihi ba
 | POST | /api/orders/:id/pay | auth | Buat transaksi Snap di Midtrans sandbox, mengembalikan `{ payment: { token, redirectUrl } }`. Dipanggil ulang akan mengembalikan token yang sama |
 | POST | /api/orders/:id/sync | auth | Cadangan bila webhook tidak sampai: tanya status ke Midtrans lalu perbarui order |
 | POST | /api/payments/notification | publik (signature) | Webhook Midtrans |
-| GET | /api/tickets | auth | Tiket milik sendiri (`pending_mint` sampai token dicetak di Tahap 5) |
+| GET | /api/tickets | auth | Tiket milik sendiri. `status`: `pending_mint` (menunggu dicetak), `valid` (token sudah ada), `listed`, `used` |
+| GET | /api/tickets/:id/onchain | auth | Baca token langsung dari blockchain: `onchainOwner`, `ownerMatches` (sama dengan wallet pembeli), `used`, `nftUrl` |
 
 Kode `/pay`: 409 order bukan pending atau sudah kedaluwarsa, 502 Midtrans menolak, 503 key Midtrans belum diisi.
 
@@ -61,6 +62,13 @@ Kode `/pay`: 409 order bukan pending atau sudah kedaluwarsa, 502 Midtrans menola
 | expire | `expired` |
 | deny, cancel, failure | `failed` |
 | refund, partial_refund, chargeback (dari `paid`) | `refunded` |
+
+**Pencetakan token (Tahap 5).** Saat order menjadi `paid`, webhook langsung dibalas 200 dan pencetakan berjalan di latar belakang (10-30 detik per tiket):
+1. Baris tiket dibuat dengan status `pending_mint`.
+2. Server memanggil `mintTicket(eventId, walletPembeli)` di smart contract. Semua transaksi platform masuk antrean serial supaya nonce tidak bentrok.
+3. Hasilnya `tokenId` dan `mintTxHash` disimpan, status tiket menjadi `valid`.
+- Hash transaksi disimpan sebelum menunggu konfirmasi. Bila server mati di tengah jalan, penyapu (tiap 20 detik) memeriksa transaksi itu dulu (`mined`, `pending`, atau `hilang`) sehingga tiket tidak tercetak dua kali.
+- Gagal (RPC bermasalah, saldo gas habis) dicoba ulang dengan jeda bertambah (maksimal 5 menit), tiket tetap `pending_mint`.
 
 Order `failed` dan `expired` tidak lagi menahan kuota 4 tiket per akun maupun kapasitas event.
 

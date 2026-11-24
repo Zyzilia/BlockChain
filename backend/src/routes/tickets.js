@@ -1,6 +1,8 @@
 const express = require('express');
 const db = require('../db');
 const { auth } = require('../middleware/auth');
+const { readTicketOnChain } = require('../services/blockchain');
+const { HttpError } = require('../utils/http');
 
 const router = express.Router();
 
@@ -25,6 +27,34 @@ router.get('/', auth, (req, res) => {
       mintTxUrl: t.mint_tx_hash ? `https://sepolia.etherscan.io/tx/${t.mint_tx_hash}` : null,
     })),
   });
+});
+
+// Bukti keaslian: baca kepemilikan token langsung dari blockchain dan bandingkan dengan wallet pembeli
+router.get('/:id/onchain', auth, async (req, res, next) => {
+  try {
+    const t = db.prepare('SELECT * FROM tickets WHERE id = ? AND owner_user_id = ?').get(req.params.id, req.user.id);
+    if (!t) throw new HttpError(404, 'Tiket tidak ditemukan');
+    if (t.token_id === null) throw new HttpError(409, 'Token belum dicetak. Tunggu beberapa detik lalu coba lagi.');
+    const wallet = db.prepare('SELECT address FROM wallets WHERE user_id = ?').get(req.user.id).address;
+
+    let info;
+    try {
+      info = await readTicketOnChain(t.token_id);
+    } catch (e) {
+      if (e.message === 'BLOCKCHAIN_NOT_CONFIGURED') throw new HttpError(503, 'Blockchain belum dikonfigurasi');
+      throw new HttpError(502, 'Gagal membaca blockchain: ' + (e.shortMessage || e.message));
+    }
+    const contractAddress = process.env.CONTRACT_ADDRESS;
+    res.json({
+      tokenId: t.token_id,
+      exists: info.exists,
+      onchainOwner: info.owner || null,
+      expectedOwner: wallet,
+      ownerMatches: !!info.owner && info.owner.toLowerCase() === wallet.toLowerCase(),
+      used: info.used || false,
+      nftUrl: `https://sepolia.etherscan.io/nft/${contractAddress}/${t.token_id}`,
+    });
+  } catch (err) { next(err); }
 });
 
 module.exports = router;

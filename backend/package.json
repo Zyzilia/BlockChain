@@ -10,7 +10,11 @@
     "gen:keys": "node scripts/gen-keys.js",
     "smoke": "node scripts/smoke-test.js",
     "test:payment": "node scripts/payment-test.js",
-    "demo:pay": "node scripts/pay-demo.js"
+    "demo:pay": "node scripts/pay-demo.js",
+    "test:mint": "node scripts/mint-test.js",
+    "reconcile": "node scripts/reconcile.js",
+    "reconcile:chain": "node scripts/reconcile.js --chain",
+    "demo:pay:sync": "node scripts/pay-demo.js --sync"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

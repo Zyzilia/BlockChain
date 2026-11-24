@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const db = require('../db');
+const { kick } = require('./fulfillment');
 
 // Rumus resmi Midtrans: SHA512(order_id + status_code + gross_amount + SignatureSecretKey)
 // Sejak 28 Okt 2026 kuncinya adalah Signature Secret Key (terpisah dari Server Key).
@@ -91,4 +92,11 @@ const apply = db.transaction((p) => {
   return { result: next ? next : 'noted', orderStatus: next || order.status };
 });
 
-module.exports = { verifySignature, recordInvalid, applyNotification: apply };
+// Setelah order menjadi 'paid', cetak token di latar belakang (webhook tetap dibalas cepat)
+function applyAndFulfil(p) {
+  const out = apply(p);
+  if (out.result === 'paid') kick();
+  return out;
+}
+
+module.exports = { verifySignature, recordInvalid, applyNotification: applyAndFulfil };
