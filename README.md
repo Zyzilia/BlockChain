@@ -26,7 +26,6 @@ Hanya memakai sandbox dan testnet. Tidak ada uang atau data pribadi asli.
 | ----- | -------------------------------------- | ------- |
 | 1     | Kerangka proyek, database, dokumentasi | Selesai |
 | 2     | Smart contract, test, deploy Sepolia   | Selesai |
-| 3     | Backend: auth, event, order            | Belum   |
 | 3     | Backend: auth, event, order            | Selesai |
 | 4     | Midtrans sandbox dan webhook           | Belum   |
 | 5     | Pembayaran memicu mint token           | Belum   |
