@@ -14,7 +14,8 @@
     "test:mint": "node scripts/mint-test.js",
     "reconcile": "node scripts/reconcile.js",
     "reconcile:chain": "node scripts/reconcile.js --chain",
-    "demo:pay:sync": "node scripts/pay-demo.js --sync"
+    "demo:pay:sync": "node scripts/pay-demo.js --sync",
+    "test:flow": "node scripts/flow-test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

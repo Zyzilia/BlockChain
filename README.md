@@ -14,7 +14,7 @@ Hanya memakai sandbox dan testnet. Tidak ada uang atau data pribadi asli.
 | Folder | Isi |
 |---|---|
 | `contracts/` | Smart contract Solidity dan Hardhat |
-| `backend/` | API Express, database SQLite, Midtrans, pencetakan token |
+| `backend/` | API Express, database SQLite, Midtrans, pencetakan token, resale, check-in |
 | `frontend/` | Tampilan web (React) |
 | `docs/` | Arsitektur, ERD, API, setup Midtrans, jurnal, pernyataan AI |
 
@@ -26,7 +26,7 @@ Hanya memakai sandbox dan testnet. Tidak ada uang atau data pribadi asli.
 | 3 | Backend: auth, event, order | Selesai |
 | 4 | Midtrans sandbox dan webhook | Selesai |
 | 5 | Pembayaran memicu pencetakan token | Selesai |
-| 6 | Resale dan check-in QR | Belum |
+| 6 | Resale berbatas harga dan check-in QR | Selesai |
 | 7 | Frontend dan persiapan demo | Belum |
 
 ## Kebutuhan
@@ -125,6 +125,17 @@ Hasil yang benar: 2 tiket menjadi `valid` dalam 20-60 detik, tiap tiket punya to
 
 Uji penuh dengan pembayaran sandbox sungguhan: jalankan `npm run demo:pay` (folder `backend`), bayar lewat simulator. Setelah `LUNAS`, script menunggu token dan mencetak link Etherscan.
 
+### Tahap 6: resale dan check-in QR
+Prasyarat: saldo SepoliaETH cukup (tes ini mengirim sekitar 8 transaksi) dan server menyala.
+```bash
+# folder: backend (terminal 1)
+npm run dev
+# folder: backend (terminal 2)
+npm run test:flow           # 3-5 menit, banyak menunggu konfirmasi blok Sepolia
+npm run reconcile:chain
+```
+Hasil yang benar: semua baris `[OK]`. Yang dibuktikan: harga di atas 110% ditolak, harga tepat 110% diterima, hanya satu pembeli pada satu waktu, kepemilikan token berpindah di blockchain, penjual lama tidak bisa mengambil QR, QR yang dimodifikasi ditolak, hanya penyelenggara yang bisa memindai, check-in kedua ditolak, check-in tercatat di blockchain (`used = true`), dan penjualan bisa dibatalkan.
+
 ## Catatan penting dan checklist demo
 
 ### Satu hari sebelum demo
@@ -149,7 +160,10 @@ Uji penuh dengan pembayaran sandbox sungguhan: jalankan `npm run demo:pay` (fold
 3. Pembeli membuat order (2 tiket Rp75.000 menjadi Rp160.000) dan membayar lewat simulator Midtrans.
 4. Webhook masuk (tunjukkan log server dan inspector ngrok di http://127.0.0.1:4040), order menjadi `paid`.
 5. Token tercetak otomatis, tunjukkan link Etherscan dan hasil verifikasi `/api/tickets/:id/onchain`.
-6. `npm run reconcile:chain`: order, pembayaran, dan token cocok 100%.
+6. Resale: pemilik memasang tiket di Rp90.000 (ditolak, batas Rp82.500), lalu Rp82.500 (diterima). Pembeli lain membayar, token berpindah di blockchain.
+7. QR berputar: pemilik baru membuka QR (berganti tiap 60 detik), penjual lama tidak bisa mengambilnya.
+8. Check-in: penyelenggara memindai QR, gerbang menjawab dalam hitungan milidetik. Scan kedua ditolak. Tunjukkan transaksi `markUsed` di Etherscan.
+9. `npm run reconcile:chain`: order, pembayaran, dan token cocok 100%.
 
 ### Bila ada masalah
 | Gejala | Penyebab dan cara mengatasi |
@@ -161,7 +175,16 @@ Uji penuh dengan pembayaran sandbox sungguhan: jalankan `npm run demo:pay` (fold
 | `/pay` 503 atau 502 | `MIDTRANS_SERVER_KEY` kosong atau salah |
 | `Cannot read properties of undefined (reading 'address')` saat deploy | `PLATFORM_PRIVATE_KEY` tidak terbaca. Pastikan isi file `.env`, bukan `.env.example` |
 | Error `insufficient funds` | Saldo SepoliaETH habis |
+| Check-in ditolak `QR sudah kedaluwarsa` | QR hanya berlaku 60-120 detik. Pemilik membuka ulang QR-nya |
+| Resale sudah dibayar tetapi tiket belum pindah | Lihat log server (`[CHAIN]` atau `[RESALE]`), biasanya saldo SepoliaETH habis. Server mencoba ulang otomatis |
 | Ingin mulai dari data bersih | Hentikan server, hapus `backend/db/tiketaman.db`, lalu `npm run db:init` (folder `backend`) |
+
+### Batasan yang perlu diketahui (jujur saat presentasi)
+- **Refund belum otomatis.** Bila pembayaran resale masuk tetapi token tidak bisa dipindahkan (misalnya kuota pembeli penuh di kontrak), order tetap `paid` dan dicoba ulang. Pengembalian dana dilakukan manual lewat dashboard Midtrans.
+- **Pembayaran ke penjual dan penyelenggara dicatat, belum dicairkan.** Rincian komisi, bagian penyelenggara, dan penerimaan penjual dihitung di API, tetapi pencairan dana tidak dibuat (di luar lingkup sandbox).
+- **Backend adalah pemilik contract.** Semua transaksi dikirim platform atas nama pengguna (wallet custodial). Aturan harga tetap tidak bisa dilanggar platform, karena dikunci di kontrak.
+- **Check-in memakai database lebih dulu.** Gerbang menjawab dari database (cepat), pencatatan `markUsed` di blockchain menyusul beberapa detik kemudian.
+- **Tanggal event belum dibatasi saat check-in** (memudahkan demo dengan event yang jauh di masa depan).
 
 ### Keamanan
 - Jangan commit `backend/.env`. Periksa `git status` sebelum commit.

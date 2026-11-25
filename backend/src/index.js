@@ -22,7 +22,8 @@ app.use('/api/events', require('./routes/events'));
 app.use('/api/orders', require('./routes/orders'));
 app.use('/api/payments', require('./routes/payments'));
 app.use('/api/tickets', require('./routes/tickets'));
-// Tahap 6: /api/resale, /api/checkin
+app.use('/api/resale', require('./routes/resale'));
+app.use('/api/checkin', require('./routes/checkin'));
 
 app.use((req, res) => res.status(404).json({ error: 'Endpoint tidak ditemukan' }));
 

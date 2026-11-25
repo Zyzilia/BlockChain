@@ -72,6 +72,33 @@ Kode `/pay`: 409 order bukan pending atau sudah kedaluwarsa, 502 Midtrans menola
 
 Order `failed` dan `expired` tidak lagi menahan kuota 4 tiket per akun maupun kapasitas event.
 
+## Resale (Tahap 6)
+| Method | Path | Akses | Fungsi |
+|---|---|---|---|
+| GET | /api/resale | publik | Tiket yang sedang dijual ulang |
+| GET | /api/resale/mine | auth | Penjualan milik sendiri (semua status) |
+| POST | /api/resale | auth | Pasang tiket untuk dijual. Body: `{ ticketId, priceIdr }` |
+| DELETE | /api/resale/:id | auth | Batalkan penjualan |
+| POST | /api/resale/:id/buy | buyer | Buat order resale, lalu bayar lewat `POST /api/orders/:id/pay` |
+
+- **Batas harga.** `priceIdr` maksimal `faceValue x maxResaleBps / 10000` (default 110%). Ditolak backend (400) dan, sebagai pengaman, oleh smart contract (`PriceAboveCap`). Memasang penjualan menulis ke blockchain (10-30 detik).
+- **Rincian** pada tiap listing: `buyerTotalIdr` (harga + biaya layanan Rp5.000), `platformCommissionIdr` (5% dari harga, dipotong dari penjual), `organizerShareIdr` (50% dari selisih di atas nominal, sama dengan rumus di kontrak), `sellerNetIdr`.
+- **Satu pembeli pada satu waktu.** Selama ada order resale yang menunggu bayar (30 menit) atau sudah dibayar, pembeli lain mendapat 409 dan penjual tidak bisa membatalkan.
+- **Pemenuhan.** Setelah order resale `paid`, pekerja latar belakang memanggil `executeResale` di kontrak lalu memindahkan kepemilikan di database (tiket penjual berpindah ke pembeli). Pembeli tetap dibatasi 4 tiket per event.
+- Transfer langsung antar-wallet tidak mungkin (`transferFrom` dinonaktifkan di kontrak).
+
+## QR berputar dan check-in (Tahap 6)
+| Method | Path | Akses | Fungsi |
+|---|---|---|---|
+| GET | /api/tickets/:id/qr | pemilik | Isi QR dan gambar (`qrDataUrl`). Berganti tiap 60 detik, panggil ulang sesuai `refreshInSeconds` |
+| POST | /api/checkin | organizer | Pindai QR. Body: `{ qr }` |
+| GET | /api/checkin/:ticketId | organizer | Status check-in dan pencatatannya di blockchain |
+
+- **QR**: `TA1.<ticketId>.<jendelaWaktu>.<HMAC>`. Diterima pada jendela waktu saat ini dan satu sebelumnya, jadi berlaku 60-120 detik. Tangkapan layar lama tidak bisa dipakai. Hanya pemilik terkini yang bisa mengambil QR (penjual lama mendapat 404).
+- **Check-in** hanya oleh penyelenggara event itu sendiri. Gerbang memutuskan dari database (biasanya di bawah 1 detik, `elapsedMs` pada respons), sedangkan pencatatan `markUsed` di blockchain menyusul di latar belakang (`recordedOnChain`). Pemakaian kedua ditolak oleh database (409), dan oleh kontrak (`AlreadyUsed`) sebagai pengaman kedua.
+- Tiket yang sedang dijual dan di-check-in: penjualannya dibatalkan otomatis.
+- Kode: 400 QR tidak valid atau kedaluwarsa, 403 bukan penyelenggara event itu, 409 sudah dipakai atau token belum dicetak.
+
 ## Lainnya
 | Method | Path | Fungsi |
 |---|---|---|

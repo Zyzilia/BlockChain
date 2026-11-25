@@ -3,6 +3,7 @@ const db = require('../db');
 const { auth } = require('../middleware/auth');
 const { readTicketOnChain } = require('../services/blockchain');
 const { HttpError } = require('../utils/http');
+const { makePayload, toDataUrl } = require('../services/qr');
 
 const router = express.Router();
 
@@ -27,6 +28,18 @@ router.get('/', auth, (req, res) => {
       mintTxUrl: t.mint_tx_hash ? `https://sepolia.etherscan.io/tx/${t.mint_tx_hash}` : null,
     })),
   });
+});
+
+// QR berputar: berubah tiap 60 detik. Aplikasi pemilik memanggil ulang endpoint ini sesuai refreshInSeconds.
+router.get('/:id/qr', auth, async (req, res, next) => {
+  try {
+    const t = db.prepare('SELECT * FROM tickets WHERE id = ? AND owner_user_id = ?').get(req.params.id, req.user.id);
+    if (!t) throw new HttpError(404, 'Tiket tidak ditemukan');
+    if (t.status === 'pending_mint') throw new HttpError(409, 'Token tiket belum dicetak');
+    if (t.status === 'used') throw new HttpError(409, 'Tiket sudah dipakai');
+    const q = makePayload(t.id);
+    res.json({ ticketId: t.id, payload: q.payload, qrDataUrl: await toDataUrl(q.payload), expiresAt: q.expiresAt, refreshInSeconds: q.refreshInSeconds });
+  } catch (err) { next(err); }
 });
 
 // Bukti keaslian: baca kepemilikan token langsung dari blockchain dan bandingkan dengan wallet pembeli

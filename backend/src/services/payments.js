@@ -61,6 +61,12 @@ const apply = db.transaction((p) => {
     if (order.status === 'pending') {
       db.prepare(`UPDATE orders SET status = 'paid', paid_at = datetime('now'), payment_type = COALESCE(?, payment_type) WHERE id = ?`)
         .run(p.payment_type || null, order.id);
+      if (order.listing_id !== null) {
+        const l = db.prepare('SELECT status FROM resale_listings WHERE id = ?').get(order.listing_id);
+        if (!l || l.status !== 'active') {
+          console.warn(`[PERINGATAN] Order resale ${order.id} dibayar tetapi listing ${order.listing_id} sudah ${l ? l.status : 'hilang'}. Perlu refund manual.`);
+        }
+      }
       // Pembelian primer: buat baris tiket. Pencetakan token di blockchain dilakukan di Tahap 5.
       if (order.listing_id === null) {
         const addTicket = db.prepare(

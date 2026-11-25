@@ -10,4 +10,13 @@ function calcOrderAmounts(faceValueIdr, quantity) {
   return { faceTotal, serviceFee, total: faceTotal + serviceFee };
 }
 
-module.exports = { serviceFeePerTicket, calcOrderAmounts };
+// Pembagian hasil penjualan ulang (business case, Tabel 13 dan 15):
+//  - komisi platform 5% dari harga resale, dipotong dari penerimaan penjual
+//  - penyelenggara menerima 50% dari selisih harga di atas nominal (sama dengan rumus di smart contract)
+function resaleBreakdown(priceIdr, faceValueIdr) {
+  const commission = Math.round(priceIdr * 0.05);
+  const organizerShare = Math.floor((Math.max(0, priceIdr - faceValueIdr) * 5000) / 10000);
+  return { commission, organizerShare, sellerNet: priceIdr - commission - organizerShare };
+}
+
+module.exports = { serviceFeePerTicket, calcOrderAmounts, resaleBreakdown };

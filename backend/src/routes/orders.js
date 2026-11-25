@@ -21,6 +21,7 @@ const view = (o) => ({
   id: o.id,
   eventId: o.event_id,
   eventName: o.event_name,
+  listingId: o.listing_id,
   quantity: o.quantity,
   faceTotalIdr: o.face_total_idr,
   serviceFeeIdr: o.service_fee_idr,
@@ -109,6 +110,11 @@ router.post('/:id/pay', auth, async (req, res, next) => {
       throw new HttpError(409, 'Order sudah kedaluwarsa, buat order baru');
     }
 
+    if (order.listing_id !== null) { // order resale: listing harus masih aktif
+      const l = db.prepare('SELECT status FROM resale_listings WHERE id = ?').get(order.listing_id);
+      if (!l || l.status !== 'active') throw new HttpError(409, 'Penjualan ini sudah tidak tersedia');
+    }
+
     const redirect = (t) => `https://app.sandbox.midtrans.com/snap/v2/vtweb/${t}`;
     if (order.snap_token) {
       return res.json({ payment: { token: order.snap_token, redirectUrl: redirect(order.snap_token) } });
@@ -124,7 +130,7 @@ router.post('/:id/pay', auth, async (req, res, next) => {
         orderId: order.midtrans_order_id,
         grossAmount: order.total_idr,
         items: [
-          { id: `EVT-${ev.id}`, price: ev.face_value_idr, quantity: order.quantity, name: `Tiket ${ev.name}`.slice(0, 50) },
+          { id: `EVT-${ev.id}`, price: order.face_total_idr / order.quantity, quantity: order.quantity, name: `${order.listing_id !== null ? 'Tiket resale' : 'Tiket'} ${ev.name}`.slice(0, 50) },
           { id: 'FEE', price: feePerTicket, quantity: order.quantity, name: 'Biaya layanan' },
         ],
         customer: { first_name: user.name.slice(0, 50), email: user.email },

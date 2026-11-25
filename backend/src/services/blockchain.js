@@ -57,19 +57,65 @@ function mintTicketOnChain({ onchainEventId, to, onTxSent }) {
   });
 }
 
-// Memeriksa transaksi mint yang hash-nya sudah tersimpan tetapi hasilnya belum dicatat
-// (misalnya server mati saat menunggu konfirmasi). Mencegah mint ganda untuk satu tiket.
-async function inspectMintTx(txHash) {
+// Nama error kustom dari smart contract (mis. PriceAboveCap, AlreadyUsed, QuotaExceeded)
+const revertName = (e) => (e && e.revert && e.revert.name) || null;
+
+function listTicketOnChain({ tokenId, priceIdr }) {
+  return enqueue(async () => {
+    const tx = await getContract().listTicket(tokenId, priceIdr);
+    await tx.wait();
+    return { txHash: tx.hash };
+  });
+}
+
+function cancelListingOnChain(tokenId) {
+  return enqueue(async () => {
+    const tx = await getContract().cancelListing(tokenId);
+    await tx.wait();
+    return { txHash: tx.hash };
+  });
+}
+
+// Memindahkan kepemilikan token ke pembeli resale (kontrak memeriksa daftar harga dan kuota)
+function executeResaleOnChain({ tokenId, buyer, onTxSent }) {
+  return enqueue(async () => {
+    const contract = getContract();
+    const tx = await contract.executeResale(tokenId, buyer);
+    if (onTxSent) onTxSent(tx.hash);
+    const receipt = await tx.wait();
+    const ev = findEvent(contract, receipt, 'ResaleExecuted');
+    if (!ev) throw new Error('Event ResaleExecuted tidak ditemukan pada transaksi');
+    return { txHash: tx.hash, organizerShare: Number(ev.args.organizerShare) };
+  });
+}
+
+// Menandai tiket terpakai di blockchain (check-in)
+function markUsedOnChain(tokenId) {
+  return enqueue(async () => {
+    const tx = await getContract().markUsed(tokenId);
+    await tx.wait();
+    return { txHash: tx.hash };
+  });
+}
+
+// Memeriksa transaksi yang hash-nya sudah tersimpan tetapi hasilnya belum dicatat
+// (misalnya server mati saat menunggu konfirmasi). Mencegah pemrosesan ganda.
+async function inspectTx(txHash, eventName) {
   const contract = getContract();
   const provider = contract.runner.provider;
   const receipt = await provider.getTransactionReceipt(txHash);
   if (receipt) {
     if (receipt.status !== 1) return { state: 'reverted' };
-    const ev = findEvent(contract, receipt, 'TicketMinted');
-    return ev ? { state: 'mined', tokenId: Number(ev.args.tokenId) } : { state: 'reverted' };
+    const ev = findEvent(contract, receipt, eventName);
+    return ev ? { state: 'mined', args: ev.args } : { state: 'reverted' };
   }
   const tx = await provider.getTransaction(txHash);
   return { state: tx ? 'pending' : 'missing' };
+}
+
+async function inspectMintTx(txHash) {
+  const r = await inspectTx(txHash, 'TicketMinted');
+  return r.state === 'mined' ? { state: 'mined', tokenId: Number(r.args.tokenId) } : { state: r.state };
 }
 
 // Membaca keadaan tiket langsung dari blockchain (bukti keaslian dan kepemilikan)
@@ -88,4 +134,7 @@ async function readTicketOnChain(tokenId) {
   }
 }
 
-module.exports = { isConfigured, createEventOnChain, mintTicketOnChain, inspectMintTx, readTicketOnChain };
+module.exports = {
+  isConfigured, revertName, createEventOnChain, mintTicketOnChain, inspectMintTx, inspectTx,
+  listTicketOnChain, cancelListingOnChain, executeResaleOnChain, markUsedOnChain, readTicketOnChain,
+};
