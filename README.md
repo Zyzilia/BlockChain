@@ -15,8 +15,8 @@ Hanya memakai sandbox dan testnet. Tidak ada uang atau data pribadi asli.
 |---|---|
 | `contracts/` | Smart contract Solidity dan Hardhat |
 | `backend/` | API Express, database SQLite, Midtrans, pencetakan token, resale, check-in |
-| `frontend/` | Tampilan web (React) |
-| `docs/` | Arsitektur, ERD, API, setup Midtrans, jurnal, pernyataan AI |
+| `frontend/` | Tampilan web (React + Vite), gaya mengikuti `docs/DESIGN.md` |
+| `docs/` | Arsitektur, ERD, API, setup Midtrans, desain, jurnal, pernyataan AI |
 
 ## Status pengerjaan
 | Tahap | Isi | Status |
@@ -27,7 +27,7 @@ Hanya memakai sandbox dan testnet. Tidak ada uang atau data pribadi asli.
 | 4 | Midtrans sandbox dan webhook | Selesai |
 | 5 | Pembayaran memicu pencetakan token | Selesai |
 | 6 | Resale berbatas harga dan check-in QR | Selesai |
-| 7 | Frontend dan persiapan demo | Belum |
+| 7 | Frontend, desain, dan persiapan demo | Selesai |
 
 ## Kebutuhan
 - Node.js 20 atau lebih baru, Git
@@ -62,6 +62,21 @@ Isi `backend/.env` (tanpa spasi setelah `=`):
 
 Panduan akun Midtrans dan tunnel: `docs/08-setup-midtrans-ngrok.md`. Daftar endpoint: `docs/07-dokumentasi-api.md`.
 Setelah mengubah `.env`, **restart server** (`npm run dev` tidak membaca ulang `.env` sendiri).
+
+**Tampilan web (frontend)**
+```bash
+# folder: frontend
+npm install
+npm run dev                 # buka http://localhost:5173 (backend harus menyala di port 3000)
+```
+Untuk demo, lebih praktis memakai satu alamat saja:
+```bash
+# folder: frontend
+npm run build               # menghasilkan folder dist
+# lalu restart backend (folder: backend, npm run dev) dan buka http://localhost:3000
+```
+Backend otomatis menyajikan `frontend/dist` bila ada, sehingga **satu tunnel ngrok cukup** untuk tampilan web dan webhook Midtrans.
+Setelah mengubah kode frontend, jalankan `npm run build` lagi.
 
 ## Cara menguji
 
@@ -136,6 +151,23 @@ npm run reconcile:chain
 ```
 Hasil yang benar: semua baris `[OK]`. Yang dibuktikan: harga di atas 110% ditolak, harga tepat 110% diterima, hanya satu pembeli pada satu waktu, kepemilikan token berpindah di blockchain, penjual lama tidak bisa mengambil QR, QR yang dimodifikasi ditolak, hanya penyelenggara yang bisa memindai, check-in kedua ditolak, check-in tercatat di blockchain (`used = true`), dan penjualan bisa dibatalkan.
 
+### Tahap 7: tampilan web dan uji menyeluruh
+```bash
+# folder: backend (terminal 1)
+npm run dev
+# folder: frontend (terminal 2)
+npm install                 # sekali saja
+npm run dev                 # buka http://localhost:5173
+```
+Hasil yang benar: beranda tampil dengan daftar event (atau pesan "Belum ada event terbit" bila database baru), tanpa error merah di konsol browser.
+
+Uji menyeluruh semua tahap sekaligus (server harus menyala, sekitar 8 sampai 12 menit):
+```bash
+# folder: backend (terminal 3)
+npm run test:all
+```
+Hasil yang benar: ringkasan di akhir menampilkan `[LULUS]` untuk keenam tahap dan `Semua tahap lulus. Siap demo.`
+
 ## Catatan penting dan checklist demo
 
 ### Satu hari sebelum demo
@@ -143,7 +175,8 @@ Hasil yang benar: semua baris `[OK]`. Yang dibuktikan: harga di atas 110% ditola
 - [ ] `backend/.env` lengkap sesuai tabel di atas, tanpa spasi setelah `=`.
 - [ ] `CONTRACT_ADDRESS` sama dengan contract yang dipakai, dan `backend/src/abi/TiketAman.json` ada. Jangan deploy ulang tanpa perlu: alamat baru berarti event lama tidak ada di contract baru.
 - [ ] Key Midtrans adalah key **sandbox**. `MIDTRANS_SIGNATURE_SECRET_KEY` terisi (webhook ditandatangani dengan kunci ini, bukan Server Key).
-- [ ] Jalankan `npm run test:payment` dan `npm run test:mint` (folder `backend`), keduanya harus `[OK]` semua.
+- [ ] Jalankan `npm run test:all` (folder `backend`, server menyala). Semua tahap harus `[LULUS]`.
+- [ ] `npm run build` di folder `frontend` terbaru, lalu restart backend.
 - [ ] Latihan satu kali penuh dengan `npm run demo:pay`.
 - [ ] Rekam video demo sebagai cadangan, simpan link Etherscan hasil latihan.
 
@@ -154,16 +187,18 @@ Hasil yang benar: semua baris `[OK]`. Yang dibuktikan: harga di atas 110% ditola
 4. Cek `https://ALAMAT-NGROK/health` di browser.
 5. Terminal 3, folder `backend`: `npm run demo:pay`.
 
-### Alur demo (5-7 menit)
-1. Tunjukkan contract di Etherscan Sepolia (alamat, tab Events) dan jelaskan tiga aturan anti-calo.
-2. Penyelenggara membuat event, diterbitkan: konfigurasi terkunci on-chain (tunjukkan link transaksi).
-3. Pembeli membuat order (2 tiket Rp75.000 menjadi Rp160.000) dan membayar lewat simulator Midtrans.
-4. Webhook masuk (tunjukkan log server dan inspector ngrok di http://127.0.0.1:4040), order menjadi `paid`.
-5. Token tercetak otomatis, tunjukkan link Etherscan dan hasil verifikasi `/api/tickets/:id/onchain`.
-6. Resale: pemilik memasang tiket di Rp90.000 (ditolak, batas Rp82.500), lalu Rp82.500 (diterima). Pembeli lain membayar, token berpindah di blockchain.
-7. QR berputar: pemilik baru membuka QR (berganti tiap 60 detik), penjual lama tidak bisa mengambilnya.
-8. Check-in: penyelenggara memindai QR, gerbang menjawab dalam hitungan milidetik. Scan kedua ditolak. Tunjukkan transaksi `markUsed` di Etherscan.
-9. `npm run reconcile:chain`: order, pembayaran, dan token cocok 100%.
+### Alur demo lewat tampilan web (5-7 menit)
+Siapkan dua jendela browser terpisah (atau satu jendela biasa dan satu jendela penyamaran) supaya dua akun bisa login bersamaan.
+Siapkan sebelumnya: akun penyelenggara, akun pembeli A, dan akun pembeli B (data dummy, email berakhiran `.ac.id`).
+1. **Bukti on-chain.** Tunjukkan contract di Etherscan (tautan "Etherscan" di sisi kiri halaman) dan jelaskan tiga aturan anti-calo.
+2. **Penyelenggara.** Menu Panitia, isi event baru, lalu **Terbitkan**. Tunggu 10 sampai 30 detik, kartu event menampilkan "Bukti di Etherscan" (konfigurasi terkunci di blockchain).
+3. **Pembeli A.** Buka event, pilih 2 tiket, **Beli dan bayar** (Rp160.000). Popup Midtrans muncul, bayar lewat simulator Midtrans. Pelacak pembayaran berubah menjadi "Dibayar".
+4. **Token tercetak.** Menu Tiket saya: status "Sedang dicetak" berubah menjadi "Valid" dengan nomor token. Klik **Verifikasi di blockchain**.
+5. **Jual ulang.** Pasang satu tiket di Rp90.000 (ditolak, batas Rp82.500), lalu Rp82.500 (diterima, tampil rincian penerimaan).
+6. **Pembeli B.** Menu Resale, **Beli tiket**, bayar lewat simulator. Token berpindah, tiket muncul di akun B, hilang dari akun A.
+7. **QR berputar.** Di akun B, **Tampilkan QR** (berganti tiap 60 detik). Akun A tidak lagi bisa mengambil QR tiket itu.
+8. **Check-in.** Akun penyelenggara, menu Pindai tiket: pindai QR (kamera) atau tempel kodenya (tombol "Salin kode QR"). Hasil hijau muncul dalam hitungan milidetik. Pindai lagi: ditolak.
+9. Tunjukkan transaksi `markUsed` di Etherscan dan jalankan `npm run reconcile:chain` (folder `backend`): semua cocok 100%.
 
 ### Bila ada masalah
 | Gejala | Penyebab dan cara mengatasi |
@@ -177,6 +212,10 @@ Hasil yang benar: semua baris `[OK]`. Yang dibuktikan: harga di atas 110% ditola
 | Error `insufficient funds` | Saldo SepoliaETH habis |
 | Check-in ditolak `QR sudah kedaluwarsa` | QR hanya berlaku 60-120 detik. Pemilik membuka ulang QR-nya |
 | Resale sudah dibayar tetapi tiket belum pindah | Lihat log server (`[CHAIN]` atau `[RESALE]`), biasanya saldo SepoliaETH habis. Server mencoba ulang otomatis |
+| Halaman web kosong atau error "Tidak bisa menghubungi server" | Backend belum menyala, atau frontend dijalankan tanpa backend di port 3000 |
+| Popup Midtrans tidak muncul | `MIDTRANS_CLIENT_KEY` kosong atau salah. Halaman pembayaran otomatis dibuka di tab baru sebagai cadangan, atau pakai tautan "Buka halaman pembayaran" |
+| Tampilan web lama setelah mengubah kode | Jalankan `npm run build` lagi di folder `frontend`, lalu muat ulang browser |
+| Kamera pemindai tidak ada | Browser belum mendukung pemindaian QR. Tempel kode QR secara manual |
 | Ingin mulai dari data bersih | Hentikan server, hapus `backend/db/tiketaman.db`, lalu `npm run db:init` (folder `backend`) |
 
 ### Batasan yang perlu diketahui (jujur saat presentasi)
