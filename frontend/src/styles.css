@@ -118,6 +118,7 @@ img { max-width: 100%; }
 .events h2 { margin-bottom: 1.2rem; }
 .events__list { display: grid; gap: 1.2rem; max-width: 62rem; }
 .ticket { filter: drop-shadow(0 8px 16px rgba(60, 40, 110, 0.13)); }
+.ticket:has(.modal) { filter: none; }
 .ticket__body {
   --notch: 5.8rem; --r: 0.7rem;
   display: grid; grid-template-columns: var(--notch) 1fr; background: var(--card); border-radius: 18px;
